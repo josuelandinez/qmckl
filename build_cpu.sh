@@ -3,7 +3,7 @@
 set -e 
 
 echo "=========================================================="
-echo " Phase 1: Generating QMCkl Source Files (Emacs/Autotools) "
+echo " Generating QMCkl Source Files (Emacs/Autotools) "
 echo "=========================================================="
 ./autogen.sh
 # We disable the legacy Fortran/Python wrappers to speed up configuration
@@ -12,7 +12,7 @@ echo "=========================================================="
 make -j 4 
 
 echo "=========================================================="
-echo " Phase 2: Compiling Core HPC Architecture (CMake)         "
+echo " Compiling Core HPC Architecture (CMake)         "
 echo "=========================================================="
 mkdir -p build_cmake
 cd build_cmake
@@ -25,11 +25,11 @@ cmake -DCMAKE_PREFIX_PATH=$TREXIO_PREFIX ..
 make -j 4
 
 echo "=========================================================="
-echo " Phase 3: Executing Baseline Validation Test              "
+echo " Executing Baseline Validation Test              "
 echo "=========================================================="
 export LD_LIBRARY_PATH=$TREXIO_PREFIX/lib:$PWD:$LD_LIBRARY_PATH
 ./run_test
 
 echo "=========================================================="
-echo " SUCCESS: Baseline Compilation and Test Complete!         "
+echo " Baseline Compilation and Test Complete!         "
 echo "=========================================================="
