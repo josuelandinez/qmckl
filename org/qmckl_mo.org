@@ -1346,21 +1346,27 @@ end function qmckl_compute_mo_basis_mo_value_doc
 
 
     #+begin_src c :tangle (eval c) :comments org :exports none
-qmckl_exit_code
-qmckl_compute_mo_basis_mo_value (const qmckl_context context,
-                                 const int64_t ao_num,
-                                 const int64_t mo_num,
-                                 const int64_t point_num,
-                                 const double* coefficient_t,
-                                 const double* ao_value,
-                                 double* const mo_value )
-{
-#ifdef HAVE_HPC
-  return qmckl_compute_mo_basis_mo_value_hpc (context, ao_num, mo_num, point_num, coefficient_t, ao_value, mo_value);
-#else
-  return qmckl_compute_mo_basis_mo_value_doc (context, ao_num, mo_num, point_num, coefficient_t, ao_value, mo_value);
-#endif
-}
+	  qmckl_exit_code
+	  qmckl_compute_mo_basis_mo_value (const qmckl_context context,
+					   const int64_t ao_num,
+					   const int64_t mo_num,
+					   const int64_t point_num,
+					   const double* coefficient_t,
+					   const double* ao_value,
+					   double* const mo_value )
+	  {
+      #ifdef HAVE_HPC
+      #ifdef HAVE_KOKKOS
+	    /* Kokkos GPU/CPU Hardware Intercept */
+	    extern qmckl_exit_code qmckl_compute_mo_basis_mo_value_kokkos(const qmckl_context, const int64_t, const int64_t, const int64_t, const double*, const double*, double* const);
+	    return qmckl_compute_mo_basis_mo_value_kokkos(context, ao_num, mo_num, point_num, coefficient_t, ao_value, mo_value);
+      #else
+	    return qmckl_compute_mo_basis_mo_value_hpc (context, ao_num, mo_num, point_num, coefficient_t, ao_value, mo_value);
+      #endif
+      #else
+	    return qmckl_compute_mo_basis_mo_value_doc (context, ao_num, mo_num, point_num, coefficient_t, ao_value, mo_value);
+      #endif
+	  }
     #+end_src
 
 *** HPC version                                                    :noexport:

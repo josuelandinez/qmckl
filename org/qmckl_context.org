@@ -305,97 +305,103 @@ qmckl_context qmckl_context_create();
 
    # Source
    #+begin_src c :tangle (eval c) :exports none
-qmckl_context qmckl_context_create() {
+	  qmckl_context qmckl_context_create() {
 
-  qmckl_context_struct* const ctx =
-    (qmckl_context_struct*) malloc (sizeof(qmckl_context_struct));
+	    qmckl_context_struct* const ctx =
+	      (qmckl_context_struct*) malloc (sizeof(qmckl_context_struct));
 
-  if (ctx == NULL) {
-    return QMCKL_NULL_CONTEXT;
-  }
+	    if (ctx == NULL) {
+	      return QMCKL_NULL_CONTEXT;
+	    }
 
-  /* Set all pointers and values to NULL */
-  {
-    memset(ctx, 0, sizeof(qmckl_context_struct));
-  }
+     #ifdef HAVE_KOKKOS
+	    /* Secretly initialize the hardware backend if Kokkos is present */
+	    extern void qmckl_kokkos_initialize();
+	    qmckl_kokkos_initialize();
+     #endif
 
-  /* Initialize lock */
-  {
-    pthread_mutexattr_t attr;
-    int rc;
+	    /* Set all pointers and values to NULL */
+	    {
+	      memset(ctx, 0, sizeof(qmckl_context_struct));
+	    }
 
-    rc = pthread_mutexattr_init(&attr);
-    assert (rc == 0);
+	    /* Initialize lock */
+	    {
+	      pthread_mutexattr_t attr;
+	      int rc;
 
-#ifdef PTHREAD_MUTEX_RECURSIVE
-    (void) pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-#endif
+	      rc = pthread_mutexattr_init(&attr);
+	      assert (rc == 0);
 
-    rc = pthread_mutex_init ( &(ctx->mutex), &attr);
-    assert (rc == 0);
+	  #ifdef PTHREAD_MUTEX_RECURSIVE
+	      (void) pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+	  #endif
 
-    (void) pthread_mutexattr_destroy(&attr);
-  }
+	      rc = pthread_mutex_init ( &(ctx->mutex), &attr);
+	      assert (rc == 0);
 
-  /* Initialize data */
-  {
-    ctx->tag = VALID_TAG;
+	      (void) pthread_mutexattr_destroy(&attr);
+	    }
 
-    const qmckl_context context = (qmckl_context) ctx;
-    assert ( qmckl_context_check(context) != QMCKL_NULL_CONTEXT );
+	    /* Initialize data */
+	    {
+	      ctx->tag = VALID_TAG;
 
-    qmckl_exit_code rc;
+	      const qmckl_context context = (qmckl_context) ctx;
+	      assert ( qmckl_context_check(context) != QMCKL_NULL_CONTEXT );
 
-    ctx->numprec.precision = QMCKL_DEFAULT_PRECISION;
-    ctx->numprec.range = QMCKL_DEFAULT_RANGE;
+	      qmckl_exit_code rc;
 
-#ifdef HAVE_OPENMP
-    ctx->num_threads = omp_get_max_threads();
-#else
-    ctx->num_threads = 1;
-#endif
+	      ctx->numprec.precision = QMCKL_DEFAULT_PRECISION;
+	      ctx->numprec.range = QMCKL_DEFAULT_RANGE;
 
-    rc = qmckl_init_point(context);
-    assert (rc == QMCKL_SUCCESS);
+	  #ifdef HAVE_OPENMP
+	      ctx->num_threads = omp_get_max_threads();
+	  #else
+	      ctx->num_threads = 1;
+	  #endif
 
-    rc = qmckl_init_electron(context);
-    assert (rc == QMCKL_SUCCESS);
+	      rc = qmckl_init_point(context);
+	      assert (rc == QMCKL_SUCCESS);
 
-    rc = qmckl_init_nucleus(context);
-    assert (rc == QMCKL_SUCCESS);
+	      rc = qmckl_init_electron(context);
+	      assert (rc == QMCKL_SUCCESS);
 
-    rc = qmckl_init_ao_basis(context);
-    assert (rc == QMCKL_SUCCESS);
+	      rc = qmckl_init_nucleus(context);
+	      assert (rc == QMCKL_SUCCESS);
 
-    rc = qmckl_init_mo_basis(context);
-    assert (rc == QMCKL_SUCCESS);
+	      rc = qmckl_init_ao_basis(context);
+	      assert (rc == QMCKL_SUCCESS);
 
-    /*
-    rc = qmckl_init_determinant(context);
-    assert (rc == QMCKL_SUCCESS);
-    */
+	      rc = qmckl_init_mo_basis(context);
+	      assert (rc == QMCKL_SUCCESS);
 
-    rc = qmckl_init_jastrow_champ(context);
-    assert (rc == QMCKL_SUCCESS);
-  }
+	      /*
+	      rc = qmckl_init_determinant(context);
+	      assert (rc == QMCKL_SUCCESS);
+	      ,*/
 
-  /* Allocate qmckl_memory_struct */
-  {
-    const size_t size = 128L;
-    qmckl_memory_info_struct * new_array = calloc(size, sizeof(qmckl_memory_info_struct));
-    if (new_array == NULL) {
-      free(ctx);
-      return QMCKL_NULL_CONTEXT;
-    }
-    memset( &(new_array[0]), 0, size * sizeof(qmckl_memory_info_struct) );
+	      rc = qmckl_init_jastrow_champ(context);
+	      assert (rc == QMCKL_SUCCESS);
+	    }
 
-    ctx->memory.element = new_array;
-    ctx->memory.array_size = size;
-    ctx->memory.n_allocated = (size_t) 0;
-  }
+	    /* Allocate qmckl_memory_struct */
+	    {
+	      const size_t size = 128L;
+	      qmckl_memory_info_struct * new_array = calloc(size, sizeof(qmckl_memory_info_struct));
+	      if (new_array == NULL) {
+		free(ctx);
+		return QMCKL_NULL_CONTEXT;
+	      }
+	      memset( &(new_array[0]), 0, size * sizeof(qmckl_memory_info_struct) );
 
-  return (qmckl_context) ctx;
-}
+	      ctx->memory.element = new_array;
+	      ctx->memory.array_size = size;
+	      ctx->memory.n_allocated = (size_t) 0;
+	    }
+
+	    return (qmckl_context) ctx;
+	  }
    #+end_src
 
    # Fortran interface
@@ -773,46 +779,52 @@ qmckl_context_destroy (const qmckl_context context);
 
     # Source
     #+begin_src c :tangle (eval c) :exports none
-qmckl_exit_code
-qmckl_context_destroy (const qmckl_context context)
-{
+	    qmckl_exit_code
+	    qmckl_context_destroy (const qmckl_context context)
+	    {
 
-  const qmckl_context checked_context = qmckl_context_check(context);
-  if (checked_context == QMCKL_NULL_CONTEXT) return QMCKL_INVALID_CONTEXT;
+	      const qmckl_context checked_context = qmckl_context_check(context);
+	      if (checked_context == QMCKL_NULL_CONTEXT) return QMCKL_INVALID_CONTEXT;
 
-  qmckl_context_struct* const ctx = (qmckl_context_struct*) context;
-  assert (ctx != NULL);  /* Shouldn't be possible because the context is valid */
+	      qmckl_context_struct* const ctx = (qmckl_context_struct*) context;
+	      assert (ctx != NULL);  /* Shouldn't be possible because the context is valid */
 
-  qmckl_lock(context);
-  {
-    /* Memory: Remove all allocated data */
-    for (size_t pos = (size_t) 0 ; pos < ctx->memory.array_size ; ++pos) {
-      if (ctx->memory.element[pos].pointer != NULL) {
-        free(ctx->memory.element[pos].pointer);
-        memset( &(ctx->memory.element[pos]), 0, sizeof(qmckl_memory_info_struct) );
-        ctx->memory.n_allocated -= 1;
-      }
-    }
-    assert (ctx->memory.n_allocated == (size_t) 0);
-    free(ctx->memory.element);
-    ctx->memory.element = NULL;
-    ctx->memory.array_size = (size_t) 0;
-  }
-  qmckl_unlock(context);
+	      qmckl_lock(context);
+	      {
+		/* Memory: Remove all allocated data */
+		for (size_t pos = (size_t) 0 ; pos < ctx->memory.array_size ; ++pos) {
+		  if (ctx->memory.element[pos].pointer != NULL) {
+		    free(ctx->memory.element[pos].pointer);
+		    memset( &(ctx->memory.element[pos]), 0, sizeof(qmckl_memory_info_struct) );
+		    ctx->memory.n_allocated -= 1;
+		  }
+		}
+		assert (ctx->memory.n_allocated == (size_t) 0);
+		free(ctx->memory.element);
+		ctx->memory.element = NULL;
+		ctx->memory.array_size = (size_t) 0;
+	      }
+	      qmckl_unlock(context);
 
-  ctx->tag = INVALID_TAG;
+	      ctx->tag = INVALID_TAG;
 
-  const int rc_destroy = pthread_mutex_destroy( &(ctx->mutex) );
-  if (rc_destroy != 0) {
-/* DEBUG */
-     fprintf(stderr, "qmckl_context_destroy: %s (count = %d)\n", strerror(rc_destroy), ctx->lock_count);
-     abort();
-  }
+	      const int rc_destroy = pthread_mutex_destroy( &(ctx->mutex) );
+	      if (rc_destroy != 0) {
+	    /* DEBUG */
+		 fprintf(stderr, "qmckl_context_destroy: %s (count = %d)\n", strerror(rc_destroy), ctx->lock_count);
+		 abort();
+	      }
 
-  free(ctx);
+      #ifdef HAVE_KOKKOS
+	      /* Secretly shutdown the hardware backend */
+	      extern void qmckl_kokkos_finalize();
+	      qmckl_kokkos_finalize();
+      #endif
 
-  return QMCKL_SUCCESS;
-}
+	      free(ctx);
+
+	      return QMCKL_SUCCESS;
+	    }
     #+end_src
 
     # Fortran interface

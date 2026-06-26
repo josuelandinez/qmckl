@@ -3,33 +3,36 @@
 set -e 
 
 echo "=========================================================="
-echo " Generating QMCkl Source Files (Emacs/Autotools) "
+echo " Phase 1: Generating QMCkl Source Files (Emacs/Autotools) "
 echo "=========================================================="
 ./autogen.sh
-# We disable the legacy Fortran/Python wrappers to speed up configuration
 ./configure --disable-fortran --disable-python
-# Tangle the .org files into the src/ directory
 make -j 4 
 
 echo "=========================================================="
-echo " Compiling Core HPC Architecture (CMake)         "
+echo " Phase 2: Compiling Core HPC Architecture (CMake)         "
 echo "=========================================================="
 mkdir -p build_cmake
 cd build_cmake
 rm -rf * # Ensure a clean CMake cache
 
-# Use the TREXIO_PREFIX environment variable if set, otherwise default to the local install
+# Use the verified local TREXIO install
 TREXIO_PREFIX=${TREXIO_PREFIX:-$HOME/Codes/QMCkl_Kokkos/install}
 
-cmake -DCMAKE_PREFIX_PATH=$TREXIO_PREFIX ..
+# Pass TREXIO_PREFIX to CMake and enable the Kokkos CPU OpenMP backend
+cmake -DCMAKE_PREFIX_PATH=$TREXIO_PREFIX \
+      -DKokkos_ENABLE_OPENMP=ON \
+      -DCMAKE_BUILD_TYPE=Release \
+      ..
+
 make -j 4
 
 echo "=========================================================="
-echo " Executing Baseline Validation Test              "
+echo " Phase 3: Executing Baseline Validation Test              "
 echo "=========================================================="
 export LD_LIBRARY_PATH=$TREXIO_PREFIX/lib:$PWD:$LD_LIBRARY_PATH
 ./run_test
 
 echo "=========================================================="
-echo " Baseline Compilation and Test Complete!         "
+echo " SUCCESS: Kokkos Integrated and Test Complete!            "
 echo "=========================================================="

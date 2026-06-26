@@ -8194,110 +8194,117 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 #+end_src
 
      #+begin_src c :comments org :tangle (eval c) :noweb yes  :exports none
-    if (ctx->ao_basis.ao_vgl_date == ctx->point.date) {
+		  if (ctx->ao_basis.ao_vgl_date == ctx->point.date) {
 
-      // ao_vgl has been computed at this step: Just copy the data.
+		    // ao_vgl has been computed at this step: Just copy the data.
 
-      double * v = &(ctx->ao_basis.ao_value[0]);
-      double * vgl = &(ctx->ao_basis.ao_vgl[0]);
-      for (int i=0 ; i<ctx->point.num ; ++i) {
-        for (int k=0 ; k<ctx->ao_basis.ao_num ; ++k) {
-          v[k] = vgl[k];
-        }
-        v   += ctx->ao_basis.ao_num;
-        vgl += ctx->ao_basis.ao_num * 5;
-      }
+		    double * v = &(ctx->ao_basis.ao_value[0]);
+		    double * vgl = &(ctx->ao_basis.ao_vgl[0]);
+		    for (int i=0 ; i<ctx->point.num ; ++i) {
+		      for (int k=0 ; k<ctx->ao_basis.ao_num ; ++k) {
+			v[k] = vgl[k];
+		      }
+		      v   += ctx->ao_basis.ao_num;
+		      vgl += ctx->ao_basis.ao_num * 5;
+		    }
 
-    } else {
+		  } else {
 
-#ifdef HAVE_HPC
-      if (ctx->ao_basis.type == 'G') {
-        rc = qmckl_compute_ao_value_hpc_gaussian(context,
-                                                 ctx->ao_basis.ao_num,
-                                                 ctx->ao_basis.shell_num,
-                                                 ctx->ao_basis.prim_num_per_nucleus,
-                                                 ctx->point.num,
-                                                 ctx->nucleus.num,
-                                                 ctx->point.coord.data,
-                                                 ctx->nucleus.coord.data,
-                                                 ctx->ao_basis.nucleus_index,
-                                                 ctx->ao_basis.nucleus_shell_num,
-                                                 ctx->ao_basis.nucleus_range,
-                                                 ctx->ao_basis.nucleus_max_ang_mom,
-                                                 ctx->ao_basis.shell_ang_mom,
-                                                 ctx->ao_basis.ao_factor,
-                                                 ctx->ao_basis.expo_per_nucleus,
-                                                 ctx->ao_basis.coef_per_nucleus,
-                                                 ctx->ao_basis.ao_value);
-        /*
-          } else if (ctx->ao_basis.type == 'S') {
-          rc = qmck_compute_ao_value_hpc_slater(context,
-          ctx->ao_basis.ao_num,
-          ctx->ao_basis.shell_num,
-          ctx->ao_basis.prim_num,
-          ctx->point.num,
-          ctx->nucleus.num,
-          ctx->point.coord.data,
-          ctx->nucleus.coord.data,
-          ctx->ao_basis.nucleus_index,
-          ctx->ao_basis.nucleus_shell_num,
-          ctx->ao_basis.nucleus_range,
-          ctx->ao_basis.nucleus_max_ang_mom,
-          ctx->ao_basis.shell_ang_mom,
-          ctx->ao_basis.shell_prim_index,
-          ctx->ao_basis.shell_prim_num,
-          ctx->ao_basis.ao_factor,
-          ctx->ao_basis.exponent,
-          ctx->ao_basis.coefficient_normalized,
-          ctx->ao_basis.ao_value);
-        ,*/
-      } else {
-        /* Provide required data */
-        rc = qmckl_provide_ao_basis_shell_vgl(context);
-        if (rc != QMCKL_SUCCESS) {
-            return qmckl_failwith( context, rc, "qmckl_provide_ao_basis_shell_vgl", NULL);
-        }
+	      #ifdef HAVE_HPC
+		    if (ctx->ao_basis.type == 'G') {
+	       #ifdef HAVE_KOKKOS
+	       /* Kokkos GPU/CPU Hardware Intercept */
+	       extern qmckl_exit_code qmckl_compute_ao_value_kokkos(const qmckl_context, const int64_t, const int64_t, const int32_t*, const int64_t, const int64_t, const double*, const double*, const int64_t*, const int64_t*, const double*, const int32_t*, const int64_t*, const int64_t*, const double*, const double*, const double*, const double*, double* const);
 
-        rc = qmckl_compute_ao_value_doc(context,
-                                        ctx->ao_basis.ao_num,
-                                        ctx->ao_basis.shell_num,
-                                        ctx->point.num,
-                                        ctx->nucleus.num,
-                                        ctx->point.coord.data,
-                                        ctx->nucleus.coord.data,
-                                        ctx->ao_basis.nucleus_index,
-                                        ctx->ao_basis.nucleus_shell_num,
-                                        ctx->ao_basis.nucleus_range,
-                                        ctx->ao_basis.nucleus_max_ang_mom,
-                                        ctx->ao_basis.shell_ang_mom,
-                                        ctx->ao_basis.ao_factor,
-                                        ctx->ao_basis.shell_vgl,
-                                        ctx->ao_basis.ao_value);
-      }
-#else
-      /* Provide required data */
-      rc = qmckl_provide_ao_basis_shell_vgl(context);
-      if (rc != QMCKL_SUCCESS) {
-          return qmckl_failwith( context, rc, "qmckl_provide_ao_basis_shell_vgl", NULL);
-      }
+	       rc = qmckl_compute_ao_value_kokkos(context, ctx->ao_basis.ao_num, ctx->ao_basis.shell_num, ctx->ao_basis.prim_num_per_nucleus, ctx->point.num, ctx->nucleus.num, ctx->point.coord.data, ctx->nucleus.coord.data, ctx->ao_basis.nucleus_index, ctx->ao_basis.nucleus_shell_num, ctx->ao_basis.nucleus_range, ctx->ao_basis.shell_ang_mom, ctx->ao_basis.shell_prim_index, ctx->ao_basis.shell_prim_num, ctx->ao_basis.exponent, ctx->ao_basis.coefficient, ctx->ao_basis.ao_factor, ctx->ao_basis.shell_vgl, ctx->ao_basis.ao_value);
+       #else       
+		      rc = qmckl_compute_ao_value_hpc_gaussian(context,
+							       ctx->ao_basis.ao_num,
+							       ctx->ao_basis.shell_num,
+							       ctx->ao_basis.prim_num_per_nucleus,
+							       ctx->point.num,
+							       ctx->nucleus.num,
+							       ctx->point.coord.data,
+							       ctx->nucleus.coord.data,
+							       ctx->ao_basis.nucleus_index,
+							       ctx->ao_basis.nucleus_shell_num,
+							       ctx->ao_basis.nucleus_range,
+							       ctx->ao_basis.nucleus_max_ang_mom,
+							       ctx->ao_basis.shell_ang_mom,
+							       ctx->ao_basis.ao_factor,
+							       ctx->ao_basis.expo_per_nucleus,
+							       ctx->ao_basis.coef_per_nucleus,
+							       ctx->ao_basis.ao_value);
+		      /*
+			} else if (ctx->ao_basis.type == 'S') {
+			rc = qmck_compute_ao_value_hpc_slater(context,
+			ctx->ao_basis.ao_num,
+			ctx->ao_basis.shell_num,
+			ctx->ao_basis.prim_num,
+			ctx->point.num,
+			ctx->nucleus.num,
+			ctx->point.coord.data,
+			ctx->nucleus.coord.data,
+			ctx->ao_basis.nucleus_index,
+			ctx->ao_basis.nucleus_shell_num,
+			ctx->ao_basis.nucleus_range,
+			ctx->ao_basis.nucleus_max_ang_mom,
+			ctx->ao_basis.shell_ang_mom,
+			ctx->ao_basis.shell_prim_index,
+			ctx->ao_basis.shell_prim_num,
+			ctx->ao_basis.ao_factor,
+			ctx->ao_basis.exponent,
+			ctx->ao_basis.coefficient_normalized,
+			ctx->ao_basis.ao_value);
+		      ,*/
+       #endif //kokkos scope inside the hpc version
+		    } else {
+		      /* Provide required data */
+		      rc = qmckl_provide_ao_basis_shell_vgl(context);
+		      if (rc != QMCKL_SUCCESS) {
+			  return qmckl_failwith( context, rc, "qmckl_provide_ao_basis_shell_vgl", NULL);
+		      }
 
-      rc = qmckl_compute_ao_value_doc(context,
-                                      ctx->ao_basis.ao_num,
-                                      ctx->ao_basis.shell_num,
-                                      ctx->point.num,
-                                      ctx->nucleus.num,
-                                      ctx->point.coord.data,
-                                      ctx->nucleus.coord.data,
-                                      ctx->ao_basis.nucleus_index,
-                                      ctx->ao_basis.nucleus_shell_num,
-                                      ctx->ao_basis.nucleus_range,
-                                      ctx->ao_basis.nucleus_max_ang_mom,
-                                      ctx->ao_basis.shell_ang_mom,
-                                      ctx->ao_basis.ao_factor,
-                                      ctx->ao_basis.shell_vgl,
-                                      ctx->ao_basis.ao_value);
-#endif
-    }
+		      rc = qmckl_compute_ao_value_doc(context,
+						      ctx->ao_basis.ao_num,
+						      ctx->ao_basis.shell_num,
+						      ctx->point.num,
+						      ctx->nucleus.num,
+						      ctx->point.coord.data,
+						      ctx->nucleus.coord.data,
+						      ctx->ao_basis.nucleus_index,
+						      ctx->ao_basis.nucleus_shell_num,
+						      ctx->ao_basis.nucleus_range,
+						      ctx->ao_basis.nucleus_max_ang_mom,
+						      ctx->ao_basis.shell_ang_mom,
+						      ctx->ao_basis.ao_factor,
+						      ctx->ao_basis.shell_vgl,
+						      ctx->ao_basis.ao_value);
+		    }
+	      #else
+		    /* Provide required data */
+		    rc = qmckl_provide_ao_basis_shell_vgl(context);
+		    if (rc != QMCKL_SUCCESS) {
+			return qmckl_failwith( context, rc, "qmckl_provide_ao_basis_shell_vgl", NULL);
+		    }
+
+		    rc = qmckl_compute_ao_value_doc(context,
+						    ctx->ao_basis.ao_num,
+						    ctx->ao_basis.shell_num,
+						    ctx->point.num,
+						    ctx->nucleus.num,
+						    ctx->point.coord.data,
+						    ctx->nucleus.coord.data,
+						    ctx->ao_basis.nucleus_index,
+						    ctx->ao_basis.nucleus_shell_num,
+						    ctx->ao_basis.nucleus_range,
+						    ctx->ao_basis.nucleus_max_ang_mom,
+						    ctx->ao_basis.shell_ang_mom,
+						    ctx->ao_basis.ao_factor,
+						    ctx->ao_basis.shell_vgl,
+						    ctx->ao_basis.ao_value);
+	      #endif
+		  }
      #+end_src
 
 #+CALL: write_provider_post( group="ao_basis", data="ao_value" )
