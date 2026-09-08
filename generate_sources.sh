@@ -12,6 +12,10 @@ echo "=========================================================="
 # We disable compilation features because CMake will handle the actual build
 ./configure --disable-fortran --disable-python
 
+# 3. built the library
+make -j 4 
+
+
 echo "=========================================================="
 echo " Phase 2: Python Environment & TREXIO Setup               "
 echo "=========================================================="

@@ -26,5 +26,16 @@ make -j 4
 echo "=========================================================="
 echo " Executing Kokkos CPU Validation                          "
 echo "=========================================================="
-export LD_LIBRARY_PATH=$PWD:$TREXIO_PREFIX/lib:$LD_LIBRARY_PATH
+
+
+gcc -Iinclude -Isrc -I$HOME/Codes/QMCkl_Kokkos/install/include tests/verify_orbitals.c \
+    -Lbuild_cpu -L$HOME/Codes/QMCkl_Kokkos/install/lib \
+    -lqmckl -ltrexio -lm -lstdc++ -o verify_orbitals
+
+source ${PWD}/testvenv/bin/active
+
+export LD_LIBRARY_PATH=$PWD:build_cpu:$LD_LIBRARY_PATH
+
+export LD_LIBRARY_PATH=$PWD:$TREXIO_PREFIX/lib:$LD_LIBRARY_PATH    
+
 ./verify_orbitals ../water.hdf5
