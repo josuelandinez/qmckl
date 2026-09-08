@@ -8171,6 +8171,8 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
     if (mem_info.size > ctx->ao_basis.ao_value_maxsize) {
       if (ctx->ao_basis.ao_value != NULL) {
           rc = qmckl_free(context, ctx->ao_basis.ao_value);
+#endif
+#endif
           assert (rc == QMCKL_SUCCESS);
           ctx->ao_basis.ao_value = NULL;
         }
@@ -8217,6 +8219,8 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 	       extern qmckl_exit_code qmckl_compute_ao_value_kokkos(const qmckl_context, const int64_t, const int64_t, const int32_t*, const int64_t, const int64_t, const double*, const double*, const int64_t*, const int64_t*, const double*, const int32_t*, const int64_t*, const int64_t*, const double*, const double*, const double*, const double*, double* const);
 
 	       rc = qmckl_compute_ao_value_kokkos(context, ctx->ao_basis.ao_num, ctx->ao_basis.shell_num, ctx->ao_basis.prim_num_per_nucleus, ctx->point.num, ctx->nucleus.num, ctx->point.coord.data, ctx->nucleus.coord.data, ctx->ao_basis.nucleus_index, ctx->ao_basis.nucleus_shell_num, ctx->ao_basis.nucleus_range, ctx->ao_basis.shell_ang_mom, ctx->ao_basis.shell_prim_index, ctx->ao_basis.shell_prim_num, ctx->ao_basis.exponent, ctx->ao_basis.coefficient, ctx->ao_basis.ao_factor, ctx->ao_basis.shell_vgl, ctx->ao_basis.ao_value);
+#endif
+#endif
        #else       
 		      rc = qmckl_compute_ao_value_hpc_gaussian(context,
 							       ctx->ao_basis.ao_num,
@@ -8235,6 +8239,8 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 							       ctx->ao_basis.expo_per_nucleus,
 							       ctx->ao_basis.coef_per_nucleus,
 							       ctx->ao_basis.ao_value);
+#endif
+#endif
 		      /*
 			} else if (ctx->ao_basis.type == 'S') {
 			rc = qmck_compute_ao_value_hpc_slater(context,
@@ -8256,6 +8262,8 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 			ctx->ao_basis.exponent,
 			ctx->ao_basis.coefficient_normalized,
 			ctx->ao_basis.ao_value);
+#endif
+#endif
 		      ,*/
        #endif //kokkos scope inside the hpc version
 		    } else {
@@ -8280,6 +8288,8 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 						      ctx->ao_basis.ao_factor,
 						      ctx->ao_basis.shell_vgl,
 						      ctx->ao_basis.ao_value);
+#endif
+#endif
 		    }
 	      #else
 		    /* Provide required data */
@@ -8303,6 +8313,8 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 						    ctx->ao_basis.ao_factor,
 						    ctx->ao_basis.shell_vgl,
 						    ctx->ao_basis.ao_value);
+#endif
+#endif
 	      #endif
 		  }
      #+end_src
