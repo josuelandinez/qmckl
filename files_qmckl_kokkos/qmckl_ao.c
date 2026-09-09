@@ -3740,8 +3740,8 @@ if (ctx->ao_basis.ao_vgl_date == ctx->point.date) {
 	   } else {
 
        #ifdef HAVE_HPC
-	     if (ctx->ao_basis.type == 'G') {
-	#if 0 // Kokkos temporarily disabled
+	     if (ctx->ao_basis.type == 'G') {	       
+#ifdef HAVE_KOKKOS
 	/* Kokkos GPU/CPU Hardware Intercept */
 	extern qmckl_exit_code qmckl_compute_ao_value_kokkos(const qmckl_context, const int64_t, const int64_t, const int32_t*, const int64_t, const int64_t, const double*, const double*, const int64_t*, const int64_t*, const double*, const int32_t*, const int64_t*, const int64_t*, const double*, const double*, const double*, const double*, double* const);
 
