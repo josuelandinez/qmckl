@@ -6,7 +6,7 @@
 This file contains the hardware-agnostic Kokkos kernels for evaluating atomic and molecular orbitals on highly parallel architectures (GPUs and multi-core CPUs).
 
 * Source Code
-#+begin_src c++ :tangle (eval cxx_kokkos) :exports none
+#+begin_src c++ :tangle src/qmckl_orbitals_kokkos.cpp :exports none
 #include "qmckl.h"
 #include <Kokkos_Core.hpp>
 #include <KokkosBlas3_gemm.hpp>
