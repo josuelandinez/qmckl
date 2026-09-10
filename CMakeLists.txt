@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-# Globally define the NVIDIA Ampere architecture (RTX 3050)
-set(CMAKE_CUDA_ARCHITECTURES 86)
+# We dont enfoncer the arquitecture here it will pass trough the build script
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
