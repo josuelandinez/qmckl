@@ -4,12 +4,15 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <atomic>
+#include <mutex>
+#include <vector>
 
 using DeviceSpace = Kokkos::DefaultExecutionSpace::memory_space;
 using HostSpace = Kokkos::DefaultHostExecutionSpace::memory_space;
 
 // ===================================================================
-// 1. STATEFUL DEVICE REGISTRY (Persistent Cache)
+// 1. STATEFUL DEVICE REGISTRY (Thread-Safe Persistent Cache)
 // ===================================================================
 struct KokkosDeviceState {
     bool basis_initialized = false;
@@ -18,7 +21,6 @@ struct KokkosDeviceState {
     
     Kokkos::View<double*, DeviceSpace> d_coord;
     Kokkos::View<double*, DeviceSpace> d_nucl_coord; 
-    
     Kokkos::View<int64_t*, DeviceSpace> d_nucleus_index;
     Kokkos::View<int64_t*, DeviceSpace> d_nucleus_shell_num;
     Kokkos::View<double*, DeviceSpace> d_nucleus_range;
@@ -30,21 +32,22 @@ struct KokkosDeviceState {
     Kokkos::View<double*, DeviceSpace> d_ao_factor;
     Kokkos::View<int64_t*, DeviceSpace> d_ao_index;
 
+    // Standard LayoutRight across Device and Host guarantees contiguous DMA transfers
     Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace> d_mo_coef;
-    Kokkos::View<double**, Kokkos::LayoutRight, HostSpace> h_mo_coef_mirror;
-    
     Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace> d_ao_value;
     Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace> d_mo_value;
-    
-    // NEW: VGL Output Buffers [point_num][5][num]
     Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace> d_ao_vgl;
     Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace> d_mo_vgl;
+
+    Kokkos::View<double**, Kokkos::LayoutRight, HostSpace> h_mo_coef_mirror;
 };
 
 static std::unordered_map<qmckl_context, KokkosDeviceState> device_cache;
+static std::mutex cache_mutex;
+static std::atomic<size_t> kokkos_ref_count{0};
 
 // ===================================================================
-// 2. TEMPLATED KERNELS
+// 2. COMPUTE KERNELS (Fully Saturated across point_num)
 // ===================================================================
 
 template <int LMAX>
@@ -306,24 +309,16 @@ void kokkos_ao_vgl_gaussian_kernel(
 }
 
 // ===================================================================
-// 3. HARDWARE DISPATCH ENTRY POINTS (C Linkage)
+// 3. INITIALIZATION HELPER
 // ===================================================================
-extern "C" {
-
-// ... [qmckl_compute_ao_value_kokkos remains unchanged, omit here for brevity but keep in file] ...
-qmckl_exit_code qmckl_compute_ao_value_kokkos(
-    const qmckl_context context, const int64_t ao_num, const int64_t shell_num,
-    const int32_t* prim_num_per_nucleus, const int64_t point_num, const int64_t nucl_num,
-    const double* coord, const double* nucl_coord, const int64_t* nucleus_index,
+qmckl_exit_code ensure_basis_initialized(
+    KokkosDeviceState& state, const qmckl_context context, const int64_t point_num, const int64_t ao_num, const int64_t shell_num,
+    const int64_t nucl_num, const double* coord, const double* nucl_coord, const int64_t* nucleus_index,
     const int64_t* nucleus_shell_num, const double* nucleus_range, const int32_t* shell_ang_mom,
     const int64_t* shell_prim_index, const int64_t* shell_prim_num, const double* exponent,
-    const double* coefficient, const double* ao_factor, const double* shell_vgl, 
-    double* const ao_value) 
+    const double* coefficient, const double* ao_factor) 
 {
-    KokkosDeviceState& state = device_cache[context];
-
-    if (state.d_ao_value.extent(0) != point_num || state.d_ao_value.extent(1) != ao_num) {
-        state.d_ao_value = Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace>("AO_Values", point_num, ao_num);
+    if (state.d_coord.extent(0) != 3 * point_num) {
         state.d_coord = Kokkos::View<double*, DeviceSpace>("Coordinates", 3 * point_num);
     }
     if (state.d_nucl_coord.extent(0) != 3 * nucl_num) {
@@ -331,8 +326,8 @@ qmckl_exit_code qmckl_compute_ao_value_kokkos(
     }
 
     Kokkos::View<const double*, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_coord(coord, 3 * point_num);
-    Kokkos::deep_copy(state.d_coord, h_coord);
     Kokkos::View<const double*, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_nucl_coord(nucl_coord, 3 * nucl_num);
+    Kokkos::deep_copy(state.d_coord, h_coord);
     Kokkos::deep_copy(state.d_nucl_coord, h_nucl_coord);
 
     if (!state.basis_initialized) {
@@ -364,10 +359,15 @@ qmckl_exit_code qmckl_compute_ao_value_kokkos(
         Kokkos::View<int64_t*, HostSpace> h_ao_index("H_AO_Index", shell_num);
         int32_t lstart_host[32];
         for (int l = 0; l < 32; ++l) lstart_host[l] = l * (l + 1) * (l + 2) / 6;
+        
         int64_t k_off = 0;
-        for (int ishell = 0; ishell < shell_num; ++ishell) {
-            h_ao_index(ishell) = k_off;
-            k_off += lstart_host[shell_ang_mom[ishell] + 1] - lstart_host[shell_ang_mom[ishell]];
+        for (int inucl = 0; inucl < nucl_num; ++inucl) {
+            int64_t s_start = nucleus_index[inucl];
+            int64_t s_end = s_start + nucleus_shell_num[inucl];
+            for (int64_t ishell = s_start; ishell < s_end; ++ishell) {
+                h_ao_index(ishell) = k_off;
+                k_off += lstart_host[shell_ang_mom[ishell] + 1] - lstart_host[shell_ang_mom[ishell]];
+            }
         }
 
         state.d_nucleus_index = Kokkos::View<int64_t*, DeviceSpace>("nucl_idx", nucl_num);
@@ -376,6 +376,7 @@ qmckl_exit_code qmckl_compute_ao_value_kokkos(
         Kokkos::deep_copy(state.d_nucleus_shell_num, h_nucl_shell_num);
         state.d_nucleus_range = Kokkos::View<double*, DeviceSpace>("nucl_range", nucl_num);
         Kokkos::deep_copy(state.d_nucleus_range, h_nucl_range);
+        
         state.d_shell_ang_mom = Kokkos::View<int32_t*, DeviceSpace>("shell_ang_mom", shell_num);
         Kokkos::deep_copy(state.d_shell_ang_mom, h_shell_ang_mom);
         state.d_shell_prim_idx = Kokkos::View<int64_t*, DeviceSpace>("shell_prim_idx", shell_num);
@@ -396,6 +397,35 @@ qmckl_exit_code qmckl_compute_ao_value_kokkos(
         }
         state.basis_initialized = true;
     }
+    return QMCKL_SUCCESS;
+}
+
+// ===================================================================
+// 4. HARDWARE DISPATCH ENTRY POINTS (C Linkage)
+// ===================================================================
+extern "C" {
+
+qmckl_exit_code qmckl_compute_ao_value_kokkos(
+    const qmckl_context context, const int64_t ao_num, const int64_t shell_num,
+    const int32_t* prim_num_per_nucleus, const int64_t point_num, const int64_t nucl_num,
+    const double* coord, const double* nucl_coord, const int64_t* nucleus_index,
+    const int64_t* nucleus_shell_num, const double* nucleus_range, const int32_t* shell_ang_mom,
+    const int64_t* shell_prim_index, const int64_t* shell_prim_num, const double* exponent,
+    const double* coefficient, const double* ao_factor, const double* shell_vgl, 
+    double* const ao_value) 
+{
+    KokkosDeviceState* state_ptr;
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        state_ptr = &device_cache[context];
+        ensure_basis_initialized(*state_ptr, context, point_num, ao_num, shell_num, nucl_num, coord, nucl_coord, nucleus_index, nucleus_shell_num, nucleus_range, shell_ang_mom, shell_prim_index, shell_prim_num, exponent, coefficient, ao_factor);
+
+        if (state_ptr->d_ao_value.extent(0) != point_num || state_ptr->d_ao_value.extent(1) != ao_num) {
+            state_ptr->d_ao_value = Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace>("AO_Values", point_num, ao_num);
+        }
+    }
+    
+    KokkosDeviceState& state = *state_ptr;
 
     if (state.lmax_global <= 1) { kokkos_ao_gaussian_kernel<1>(point_num, ao_num, shell_num, nucl_num, state); }
     else if (state.lmax_global == 2) { kokkos_ao_gaussian_kernel<2>(point_num, ao_num, shell_num, nucl_num, state); }
@@ -403,11 +433,12 @@ qmckl_exit_code qmckl_compute_ao_value_kokkos(
     else if (state.lmax_global == 4) { kokkos_ao_gaussian_kernel<4>(point_num, ao_num, shell_num, nucl_num, state); }
     else if (state.lmax_global == 5) { kokkos_ao_gaussian_kernel<5>(point_num, ao_num, shell_num, nucl_num, state); }
     else { return QMCKL_FAILURE; }
+    
     Kokkos::fence();
 
     if (ao_value != nullptr) {
         Kokkos::View<double**, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_ao_out(ao_value, point_num, ao_num);
-        Kokkos::deep_copy(h_ao_out, state.d_ao_value);
+        Kokkos::deep_copy(h_ao_out, state.d_ao_value); 
     }
     return QMCKL_SUCCESS;
 }
@@ -421,17 +452,18 @@ qmckl_exit_code qmckl_compute_ao_vgl_kokkos(
     const double* coefficient, const double* ao_factor, const double* shell_vgl, 
     double* const ao_vgl) 
 {
-    KokkosDeviceState& state = device_cache[context];
+    KokkosDeviceState* state_ptr;
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        state_ptr = &device_cache[context];
+        ensure_basis_initialized(*state_ptr, context, point_num, ao_num, shell_num, nucl_num, coord, nucl_coord, nucleus_index, nucleus_shell_num, nucleus_range, shell_ang_mom, shell_prim_index, shell_prim_num, exponent, coefficient, ao_factor);
 
-    // Ensure state caching logic executes natively (safely trigger the value builder to init pointers)
-    qmckl_compute_ao_value_kokkos(context, ao_num, shell_num, prim_num_per_nucleus, point_num, nucl_num,
-                                  coord, nucl_coord, nucleus_index, nucleus_shell_num, nucleus_range,
-                                  shell_ang_mom, shell_prim_index, shell_prim_num, exponent,
-                                  coefficient, ao_factor, shell_vgl, nullptr);
-
-    if (state.d_ao_vgl.extent(0) != point_num || state.d_ao_vgl.extent(1) != 5 || state.d_ao_vgl.extent(2) != ao_num) {
-        state.d_ao_vgl = Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace>("AO_VGL", point_num, 5, ao_num);
+        if (state_ptr->d_ao_vgl.extent(0) != point_num || state_ptr->d_ao_vgl.extent(1) != 5 || state_ptr->d_ao_vgl.extent(2) != ao_num) {
+            state_ptr->d_ao_vgl = Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace>("AO_VGL", point_num, 5, ao_num);
+        }
     }
+    
+    KokkosDeviceState& state = *state_ptr;
 
     if (state.lmax_global <= 1) { kokkos_ao_vgl_gaussian_kernel<1>(point_num, ao_num, shell_num, nucl_num, state); }
     else if (state.lmax_global == 2) { kokkos_ao_vgl_gaussian_kernel<2>(point_num, ao_num, shell_num, nucl_num, state); }
@@ -439,6 +471,7 @@ qmckl_exit_code qmckl_compute_ao_vgl_kokkos(
     else if (state.lmax_global == 4) { kokkos_ao_vgl_gaussian_kernel<4>(point_num, ao_num, shell_num, nucl_num, state); }
     else if (state.lmax_global == 5) { kokkos_ao_vgl_gaussian_kernel<5>(point_num, ao_num, shell_num, nucl_num, state); }
     else { return QMCKL_FAILURE; }
+    
     Kokkos::fence();
 
     if (ao_vgl != nullptr) {
@@ -453,30 +486,36 @@ qmckl_exit_code qmckl_compute_mo_basis_mo_value_kokkos(
     const int64_t point_num, const double* coefficient_t, 
     const double* ao_value_host, double* const mo_value) 
 {
-    KokkosDeviceState& state = device_cache[context];
+    KokkosDeviceState* state_ptr;
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        state_ptr = &device_cache[context];
+        
+        if (state_ptr->d_mo_value.extent(0) != point_num || state_ptr->d_mo_value.extent(1) != mo_num) {
+            state_ptr->d_mo_value = Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace>("MO_Values", point_num, mo_num);
+        }
 
-    if (state.d_mo_value.extent(0) != point_num || state.d_mo_value.extent(1) != mo_num) {
-        state.d_mo_value = Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace>("MO_Values", point_num, mo_num);
-    }
+        if (state_ptr->d_mo_coef.extent(0) != ao_num || state_ptr->d_mo_coef.extent(1) != mo_num) {
+            state_ptr->d_mo_coef = Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace>("MO_Coefs", ao_num, mo_num);
+            state_ptr->h_mo_coef_mirror = Kokkos::View<double**, Kokkos::LayoutRight, HostSpace>("MO_Coefs_Mirror", ao_num, mo_num);
+            state_ptr->mo_initialized = false;
+        }
 
-    if (state.d_mo_coef.extent(0) != ao_num || state.d_mo_coef.extent(1) != mo_num) {
-        state.d_mo_coef = Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace>("MO_Coefs", ao_num, mo_num);
-        state.h_mo_coef_mirror = Kokkos::View<double**, Kokkos::LayoutRight, HostSpace>("MO_Coefs_Mirror", ao_num, mo_num);
-        state.mo_initialized = false;
-    }
+        if (state_ptr->mo_initialized) {
+            if (std::memcmp(state_ptr->h_mo_coef_mirror.data(), coefficient_t, ao_num * mo_num * sizeof(double)) != 0) {
+                state_ptr->mo_initialized = false;
+            }
+        }
 
-    if (state.mo_initialized) {
-        if (std::memcmp(state.h_mo_coef_mirror.data(), coefficient_t, ao_num * mo_num * sizeof(double)) != 0) {
-            state.mo_initialized = false;
+        if (!state_ptr->mo_initialized) {
+            Kokkos::View<const double**, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> v_mo_coef(coefficient_t, ao_num, mo_num);
+            Kokkos::deep_copy(state_ptr->h_mo_coef_mirror, v_mo_coef);
+            Kokkos::deep_copy(state_ptr->d_mo_coef, state_ptr->h_mo_coef_mirror); 
+            state_ptr->mo_initialized = true;
         }
     }
-
-    if (!state.mo_initialized) {
-        Kokkos::View<const double**, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> v_mo_coef(coefficient_t, ao_num, mo_num);
-        Kokkos::deep_copy(state.h_mo_coef_mirror, v_mo_coef);
-        Kokkos::deep_copy(state.d_mo_coef, state.h_mo_coef_mirror); 
-        state.mo_initialized = true;
-    }
+    
+    KokkosDeviceState& state = *state_ptr;
 
     bool use_device_ao = (state.d_ao_value.extent(0) == point_num && state.d_ao_value.extent(1) == ao_num);
     Kokkos::View<double**, Kokkos::LayoutRight, DeviceSpace> d_ao;
@@ -499,10 +538,13 @@ qmckl_exit_code qmckl_compute_mo_basis_mo_value_kokkos(
         }
         state.d_mo_value(i_pt, i_mo) = sum;
     });
+    
     Kokkos::fence();
 
-    Kokkos::View<double**, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_mo_out(mo_value, point_num, mo_num);
-    Kokkos::deep_copy(h_mo_out, state.d_mo_value); 
+    if (mo_value != nullptr) {
+        Kokkos::View<double**, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_mo_out(mo_value, point_num, mo_num);
+        Kokkos::deep_copy(h_mo_out, state.d_mo_value); 
+    }
 
     return QMCKL_SUCCESS;
 }
@@ -512,14 +554,19 @@ qmckl_exit_code qmckl_compute_mo_basis_mo_vgl_kokkos(
     const int64_t point_num, const double* coefficient_t, 
     const double* ao_vgl_host, double* const mo_vgl) 
 {
-    KokkosDeviceState& state = device_cache[context];
-
-    // Safely trigger cache initialization via the value block
+    // Sync coefficients
     qmckl_compute_mo_basis_mo_value_kokkos(context, ao_num, mo_num, point_num, coefficient_t, nullptr, nullptr);
 
-    if (state.d_mo_vgl.extent(0) != point_num || state.d_mo_vgl.extent(1) != 5 || state.d_mo_vgl.extent(2) != mo_num) {
-        state.d_mo_vgl = Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace>("MO_VGL", point_num, 5, mo_num);
+    KokkosDeviceState* state_ptr;
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        state_ptr = &device_cache[context];
+
+        if (state_ptr->d_mo_vgl.extent(0) != point_num || state_ptr->d_mo_vgl.extent(1) != 5 || state_ptr->d_mo_vgl.extent(2) != mo_num) {
+            state_ptr->d_mo_vgl = Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace>("MO_VGL", point_num, 5, mo_num);
+        }
     }
+    KokkosDeviceState& state = *state_ptr;
 
     bool use_device_ao = (state.d_ao_vgl.extent(0) == point_num && state.d_ao_vgl.extent(1) == 5 && state.d_ao_vgl.extent(2) == ao_num);
     Kokkos::View<double***, Kokkos::LayoutRight, DeviceSpace> d_ao_vgl_local;
@@ -552,24 +599,34 @@ qmckl_exit_code qmckl_compute_mo_basis_mo_vgl_kokkos(
         state.d_mo_vgl(i_pt, 3, i_mo) = sum3;
         state.d_mo_vgl(i_pt, 4, i_mo) = sum4;
     });
+    
     Kokkos::fence();
 
-    Kokkos::View<double***, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_mo_vgl_out(mo_vgl, point_num, 5, mo_num);
-    Kokkos::deep_copy(h_mo_vgl_out, state.d_mo_vgl); 
+    if (mo_vgl != nullptr) {
+        Kokkos::View<double***, Kokkos::LayoutRight, HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h_mo_vgl_out(mo_vgl, point_num, 5, mo_num);
+        Kokkos::deep_copy(h_mo_vgl_out, state.d_mo_vgl); 
+    }
 
     return QMCKL_SUCCESS;
 }
 
 void qmckl_kokkos_initialize() {
-    if (!Kokkos::is_initialized()) {
-        Kokkos::initialize();
-        Kokkos::print_configuration(std::cout, true);
+    if (kokkos_ref_count.fetch_add(1) == 0) {
+        if (!Kokkos::is_initialized()) {
+            Kokkos::initialize();
+            Kokkos::print_configuration(std::cout, true);
+        }
     }
 }
 
 void qmckl_kokkos_finalize() {
-    device_cache.clear(); 
-    if (Kokkos::is_initialized()) Kokkos::finalize();
+    if (kokkos_ref_count.fetch_sub(1) == 1) {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        device_cache.clear(); 
+        if (Kokkos::is_initialized()) {
+            Kokkos::finalize();
+        }
+    }
 }
 
 } // extern "C"
