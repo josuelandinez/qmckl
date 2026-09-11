@@ -1337,7 +1337,12 @@ qmckl_compute_mo_basis_mo_vgl (const qmckl_context context,
                             double* const mo_vgl )
 {
 #ifdef HAVE_HPC
+  #ifdef HAVE_KOKKOS
+  extern qmckl_exit_code qmckl_compute_mo_basis_mo_vgl_kokkos(const qmckl_context, const int64_t, const int64_t, const int64_t, const double*, const double*, double* const);
+  return qmckl_compute_mo_basis_mo_vgl_kokkos(context, ao_num, mo_num, point_num, coefficient_t, ao_vgl, mo_vgl);
+  #else
   return qmckl_compute_mo_basis_mo_vgl_hpc (context, ao_num, mo_num, point_num, coefficient_t, ao_vgl, mo_vgl);
+  #endif
 #else
   return qmckl_compute_mo_basis_mo_vgl_doc (context, ao_num, mo_num, point_num, coefficient_t, ao_vgl, mo_vgl);
 #endif

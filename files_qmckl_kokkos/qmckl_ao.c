@@ -4348,6 +4348,11 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_vgl(qmckl_context context)
 
 #ifdef HAVE_HPC
 if (ctx->ao_basis.type == 'G') {
+  #ifdef HAVE_KOKKOS
+   extern qmckl_exit_code qmckl_compute_ao_vgl_kokkos(const qmckl_context, const int64_t, const int64_t, const int32_t*, const int64_t, const int64_t, const double*, const double*, const int64_t*, const int64_t*, const double*, const int32_t*, const int64_t*, const int64_t*, const double*, const double*, const double*, const double*, double* const);
+    
+    rc = qmckl_compute_ao_vgl_kokkos(context, ctx->ao_basis.ao_num, ctx->ao_basis.shell_num, ctx->ao_basis.prim_num_per_nucleus, ctx->point.num, ctx->nucleus.num, ctx->point.coord.data, ctx->nucleus.coord.data, ctx->ao_basis.nucleus_index, ctx->ao_basis.nucleus_shell_num, ctx->ao_basis.nucleus_range, ctx->ao_basis.shell_ang_mom, ctx->ao_basis.shell_prim_index, ctx->ao_basis.shell_prim_num, ctx->ao_basis.exponent, ctx->ao_basis.coefficient, ctx->ao_basis.ao_factor, ctx->ao_basis.shell_vgl, ctx->ao_basis.ao_vgl);
+#else
   rc = qmckl_compute_ao_vgl_hpc_gaussian(context,
                                          ctx->ao_basis.ao_num,
                                          ctx->ao_basis.shell_num,
@@ -4365,6 +4370,7 @@ if (ctx->ao_basis.type == 'G') {
                                          ctx->ao_basis.expo_per_nucleus,
                                          ctx->ao_basis.coef_per_nucleus,
                                          ctx->ao_basis.ao_vgl);
+  #endif
 
   /* DEBUG
      rc = qmckl_provide_ao_basis_shell_vgl(context);

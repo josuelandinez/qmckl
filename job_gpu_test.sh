@@ -63,3 +63,23 @@ which nvcc
 nvcc --version
 
 ./verify_orbitals_gpu ../files_qmckl_kokkos/water.hdf5
+
+
+
+#adding the other tests
+
+gfortran -I./modules -c ../tests/test_qmckl_ao_f.F90 -o test_qmckl_ao_f.o
+
+gcc -I../include -I../src -I$TREXIO_PREFIX/include \
+    ../tests/test_qmckl_ao.c test_qmckl_ao_f.o \
+    -L. -L$TREXIO_PREFIX/lib64 \
+    -lqmckl -ltrexio -lm -lstdc++ -lgfortran -o test_qmckl_ao_gpu
+
+./test_qmckl_ao_gpu
+
+gcc -I../include -I../src -I$TREXIO_PREFIX/include \
+    ../tests/test_qmckl_mo.c \
+    -L. -L$TREXIO_PREFIX/lib64 \
+    -lqmckl -ltrexio -lm -lstdc++ -o test_qmckl_mo_gpu
+
+./test_qmckl_mo_gpu

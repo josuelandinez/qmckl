@@ -41,4 +41,4 @@ export OMP_PROC_BIND=close
 source tests/testvenv/bin/activate
 
 # Execute generator
-python test_benchmarks.py
+python files_qmckl_kokkos/test_benchmarks.py
