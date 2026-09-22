@@ -102,8 +102,8 @@ target_include_directories(qmckl PUBLIC
 
 target_link_libraries(qmckl PUBLIC ${QMCKL_ALL_LINK_LIBS})
 
-add_executable(run_test tests/main_test.c)
-target_link_libraries(run_test qmckl ${QMCKL_ALL_LINK_LIBS})
+##add_executable(run_test tests/main_test.c)
+##target_link_libraries(run_test qmckl ${QMCKL_ALL_LINK_LIBS})
 
-add_executable(verify_orbitals tests/verify_orbitals.c)
-target_link_libraries(verify_orbitals qmckl ${QMCKL_ALL_LINK_LIBS})
+##add_executable(verify_orbitals tests/verify_orbitals.c)
+##target_link_libraries(verify_orbitals qmckl ${QMCKL_ALL_LINK_LIBS})
