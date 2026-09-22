@@ -181,6 +181,12 @@ qmckl_exit_code qmckl_finalize_mo_basis(qmckl_context context) {
     ctx->mo_basis.mo_value_date = 0;
   }
 
+#ifdef HAVE_KOKKOS
+  extern qmckl_exit_code qmckl_kokkos_finalize_mo(qmckl_context context);
+  rc = qmckl_kokkos_finalize_mo(context);
+  if (rc != QMCKL_SUCCESS) return rc;
+#endif
+
   return qmckl_context_touch(context);
 }
 
@@ -809,7 +815,34 @@ qmckl_exit_code qmckl_provide_mo_basis_mo_value(qmckl_context context)
 
 if (ctx->mo_basis.mo_vgl_date == ctx->point.date) {
 
+#ifdef HAVE_KOKKOS
+  /* Kokkos GPU/CPU Hardware Intercept: see qmckl_extract_mo_value_from_vgl_kokkos
+     for why this must not drop to a plain host loop under Kokkos. As a bonus,
+     the GPU path reads from the device-resident MO_VGL stack rather than the
+     host mo_vgl array, which sidesteps the (separate) hazard where the host
+     array can be stale under QMCKL_KOKKOS_BYPASS_AO_SYNC even though its date
+     says fresh. */
+  extern qmckl_exit_code qmckl_extract_mo_value_from_vgl_kokkos(const qmckl_context, const int64_t, const int64_t, const double*, double* const);
+  rc = qmckl_extract_mo_value_from_vgl_kokkos(context, ctx->mo_basis.mo_num, ctx->point.num, ctx->mo_basis.mo_vgl, ctx->mo_basis.mo_value);
+  if (rc != QMCKL_SUCCESS) {
+    /* Fast path unavailable - fall back to a full, correct recompute via AO_VALUE + GEMM. */
+    rc = qmckl_provide_ao_basis_ao_value(context);
+    if (rc != QMCKL_SUCCESS) {
+      return qmckl_failwith( context, QMCKL_NOT_PROVIDED, "qmckl_ao_value", NULL);
+    }
+    if (ctx->mo_basis.r_cusp == NULL) {
+      rc = qmckl_compute_mo_basis_mo_value(context, ctx->ao_basis.ao_num, ctx->mo_basis.mo_num, ctx->point.num, ctx->mo_basis.coefficient_t, ctx->ao_basis.ao_value, ctx->mo_basis.mo_value);
+    } else {
+      rc = qmckl_provide_en_distance(context);
+      if (rc != QMCKL_SUCCESS) {
+        return qmckl_failwith( context, QMCKL_NOT_PROVIDED, "qmckl_provide_mo_basis_mo_value", "en_distance");
+      }
+      rc = qmckl_compute_mo_basis_mo_value_cusp(context, ctx->nucleus.num, ctx->ao_basis.ao_num, ctx->mo_basis.mo_num, ctx->point.num, ctx->ao_basis.ao_nucl, ctx->ao_basis.ao_ang_mom, ctx->electron.en_distance, ctx->mo_basis.r_cusp, ctx->mo_basis.cusp_param, ctx->mo_basis.coefficient_t, ctx->ao_basis.ao_value, ctx->mo_basis.mo_value);
+    }
+  }
+#else
   // mo_vgl has been computed at this step: Just copy the data.
+  // (unchanged for non-Kokkos builds)
 
   double * v = &(ctx->mo_basis.mo_value[0]);
   double * vgl = &(ctx->mo_basis.mo_vgl[0]);
@@ -820,6 +853,7 @@ if (ctx->mo_basis.mo_vgl_date == ctx->point.date) {
     v   += ctx->mo_basis.mo_num;
     vgl += ctx->mo_basis.mo_num * 5;
   }
+#endif
 
 } else {
 

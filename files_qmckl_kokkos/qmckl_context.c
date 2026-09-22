@@ -68,7 +68,6 @@ qmckl_context qmckl_context_create() {
        }
 
 #ifdef HAVE_KOKKOS
-       /* Secretly initialize the hardware backend if Kokkos is present */
        extern void qmckl_kokkos_initialize();
        qmckl_kokkos_initialize();
 #endif
@@ -77,6 +76,12 @@ qmckl_context qmckl_context_create() {
        {
 	 memset(ctx, 0, sizeof(qmckl_context_struct));
        }
+
+#ifdef HAVE_KOKKOS
+       /* Allocate and bind the Kokkos device state to the context */
+       extern void* qmckl_kokkos_state_create();
+       ctx->qmckl_extra = qmckl_kokkos_state_create();
+#endif
 
        /* Initialize lock */
        {
@@ -128,11 +133,6 @@ qmckl_context qmckl_context_create() {
 
 	 rc = qmckl_init_mo_basis(context);
 	 assert (rc == QMCKL_SUCCESS);
-
-	 /*
-	 rc = qmckl_init_determinant(context);
-	 assert (rc == QMCKL_SUCCESS);
-	 */
 
 	 rc = qmckl_init_jastrow_champ(context);
 	 assert (rc == QMCKL_SUCCESS);
@@ -276,8 +276,12 @@ qmckl_context qmckl_context_copy(const qmckl_context context) {
       return QMCKL_NULL_CONTEXT;
     }
 
-    /* Copy qmckl_extra pointer (shallow copy - implementation specific) */
+#ifdef HAVE_KOKKOS
+    extern void* qmckl_kokkos_state_copy(const void*);
+    new_ctx->qmckl_extra = qmckl_kokkos_state_copy(old_ctx->qmckl_extra);
+#else
     new_ctx->qmckl_extra = old_ctx->qmckl_extra;
+#endif
 
     qmckl_unlock(context);
     return new_context;
@@ -380,7 +384,10 @@ qmckl_exit_code
 	}
 
 #ifdef HAVE_KOKKOS
-	/* Secretly shutdown the hardware backend */
+        extern void qmckl_kokkos_state_destroy(void*);
+        qmckl_kokkos_state_destroy(ctx->qmckl_extra);
+        ctx->qmckl_extra = NULL;
+
 	extern void qmckl_kokkos_finalize();
 	qmckl_kokkos_finalize();
 #endif

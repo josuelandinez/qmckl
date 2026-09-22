@@ -2116,60 +2116,6 @@ qmckl_exit_code qmckl_finalize_basis(qmckl_context context) {
     }
   }
 
-  /*
-  // Find distance beyond which all AOs are zero using computed Gaussians.
-  {
-    qmckl_memory_info_struct mem_info = qmckl_memory_info_struct_zero;
-    mem_info.size = ctx->nucleus.num * 53 * sizeof(double);
-
-    ctx->ao_basis.nucleus_range = (double *) qmckl_malloc(context, mem_info);
-    if (ctx->ao_basis.nucleus_range == NULL) {
-      return qmckl_failwith( context,
-                             QMCKL_ALLOCATION_FAILED,
-                             "ao_basis.nucleus_range",
-                             NULL);
-    }
-    for (int64_t i=0 ; i<ctx->nucleus.num * 53 ; ++i) {
-      ctx->ao_basis.nucleus_range[i] = 50.;
-    }
-    if (ctx->ao_basis.type == 'G') {
-      rc = qmckl_compute_nucleus_range_gaussian(context,
-                                                ctx->ao_basis.ao_num,
-                                                ctx->ao_basis.shell_num,
-                                                ctx->ao_basis.prim_num,
-                                                nucl_num,
-                                                ctx->nucleus.coord.data,
-                                                ctx->ao_basis.nucleus_index,
-                                                ctx->ao_basis.nucleus_shell_num,
-                                                ctx->ao_basis.nucleus_max_ang_mom,
-                                                ctx->ao_basis.shell_prim_index,
-                                                ctx->ao_basis.shell_prim_num,
-                                                ctx->ao_basis.shell_ang_mom,
-                                                ctx->ao_basis.ao_factor,
-                                                ctx->ao_basis.exponent,
-                                                ctx->ao_basis.coefficient_normalized,
-                                                ctx->ao_basis.nucleus_range);
-    } else if (ctx->ao_basis.type == 'S') {
-      rc = qmckl_compute_nucleus_range_slater(context,
-                                              ctx->ao_basis.ao_num,
-                                              ctx->ao_basis.shell_num,
-                                              ctx->ao_basis.prim_num,
-                                              nucl_num,
-                                              ctx->nucleus.coord.data,
-                                              ctx->ao_basis.nucleus_index,
-                                              ctx->ao_basis.nucleus_shell_num,
-                                              ctx->ao_basis.nucleus_max_ang_mom,
-                                              ctx->ao_basis.shell_prim_index,
-                                              ctx->ao_basis.shell_prim_num,
-                                              ctx->ao_basis.shell_ang_mom,
-                                              ctx->ao_basis.ao_factor,
-                                              ctx->ao_basis.exponent,
-                                              ctx->ao_basis.coefficient_normalized,
-                                              ctx->ao_basis.nucleus_range);
-    }
-  }
-*/
-
   /* Find distance beyond which all AOs are zero.
      The distance is obtained by sqrt(-log(epsilon)*range) */
   {
@@ -2207,6 +2153,12 @@ qmckl_exit_code qmckl_finalize_basis(qmckl_context context) {
 
 #ifdef HAVE_HPC
   rc = qmckl_finalize_basis_hpc(context);
+  if (rc != QMCKL_SUCCESS) return rc;
+#endif
+
+#ifdef HAVE_KOKKOS
+  extern qmckl_exit_code qmckl_kokkos_finalize_ao(qmckl_context context);
+  rc = qmckl_kokkos_finalize_ao(context);
   if (rc != QMCKL_SUCCESS) return rc;
 #endif
 
@@ -3725,7 +3677,22 @@ qmckl_exit_code qmckl_provide_ao_basis_ao_value(qmckl_context context)
 
 if (ctx->ao_basis.ao_vgl_date == ctx->point.date) {
 
+#ifdef HAVE_KOKKOS
+	     /* Kokkos GPU/CPU Hardware Intercept: keep this shortcut consistently
+	        inside Kokkos instead of dropping to a plain host loop that never
+	        touches (and never populates) the Kokkos device AO_VALUE cache. */
+	     extern qmckl_exit_code qmckl_extract_ao_value_from_vgl_kokkos(const qmckl_context, const int64_t, const int64_t, const double*, double* const);
+	     rc = qmckl_extract_ao_value_from_vgl_kokkos(context, ctx->ao_basis.ao_num, ctx->point.num, ctx->ao_basis.ao_vgl, ctx->ao_basis.ao_value);
+	     if (rc != QMCKL_SUCCESS) {
+	       /* Fast path unavailable (e.g. device VGL buffer not resident for this
+	          point_num/ao_num) - fall back to a full, correct recompute rather
+	          than silently reading data that turned out not to be there. */
+	       extern qmckl_exit_code qmckl_compute_ao_value_kokkos(const qmckl_context, const int64_t, const int64_t, const int32_t*, const int64_t, const int64_t, const double*, const double*, const int64_t*, const int64_t*, const double*, const int32_t*, const int64_t*, const int64_t*, const double*, const double*, const double*, const double*, double* const);
+	       rc = qmckl_compute_ao_value_kokkos(context, ctx->ao_basis.ao_num, ctx->ao_basis.shell_num, ctx->ao_basis.prim_num_per_nucleus, ctx->point.num, ctx->nucleus.num, ctx->point.coord.data, ctx->nucleus.coord.data, ctx->ao_basis.nucleus_index, ctx->ao_basis.nucleus_shell_num, ctx->ao_basis.nucleus_range, ctx->ao_basis.shell_ang_mom, ctx->ao_basis.shell_prim_index, ctx->ao_basis.shell_prim_num, ctx->ao_basis.exponent, ctx->ao_basis.coefficient, ctx->ao_basis.ao_factor, ctx->ao_basis.shell_vgl, ctx->ao_basis.ao_value);
+	     }
+#else
 	     // ao_vgl has been computed at this step: Just copy the data.
+	     // (unchanged for non-Kokkos builds)
 
 	     double * v = &(ctx->ao_basis.ao_value[0]);
 	     double * vgl = &(ctx->ao_basis.ao_vgl[0]);
@@ -3736,6 +3703,7 @@ if (ctx->ao_basis.ao_vgl_date == ctx->point.date) {
 	       v   += ctx->ao_basis.ao_num;
 	       vgl += ctx->ao_basis.ao_num * 5;
 	     }
+#endif
 
 	   } else {
 
