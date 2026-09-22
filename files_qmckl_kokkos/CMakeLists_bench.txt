@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.18.0)
+project(QMCKLBENCH C)
+
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# Define DATA_DIR so the C headers (like data/Alz_small.h) can locate the .h5 files
+add_compile_definitions(DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# Setup TREXIO using local paths provided via command line
+# (Expected: -DTREXIO_INCLUDE_DIR=... -DTREXIO_LIBRARY=...)
+add_library(TREXIO SHARED IMPORTED)
+set_target_properties(TREXIO PROPERTIES IMPORTED_LOCATION ${TREXIO_LIBRARY})
+include_directories(${TREXIO_INCLUDE_DIR})
+
+# Setup QMCkl using local paths provided via command line
+# (Expected: -DQMCKL_INCLUDE_DIR=... -DQMCKL_LIBRARY=...)
+add_library(QMCKL SHARED IMPORTED)
+set_target_properties(QMCKL PROPERTIES IMPORTED_LOCATION ${QMCKL_LIBRARY})
+include_directories(${QMCKL_INCLUDE_DIR})
+
+# Add local data/ and src/ to includes
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/data)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# Define and link targets safely
+# We use a loop and check EXISTS because bench_jastrow.c is missing from the repository
+set(BENCH_TARGETS
+    bench_aos
+    bench_mos
+    bench_jastrow
+    bench_prec
+    bench_det
+    overlap_aos
+    overlap_mos
+)
+
+foreach(target ${BENCH_TARGETS})
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/${target}.c")
+        add_executable(${target} src/${target}.c)
+        
+        # Link against QMCKL, TREXIO, math (m), and C++ stdlib (stdc++) for Kokkos
+        target_link_libraries(${target} QMCKL TREXIO m stdc++)
+    endif()
+endforeach()
