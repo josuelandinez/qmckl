@@ -69,7 +69,7 @@ def export_acene_trexio(atoms, h5_filename, basis_name='cc-pvdz'):
     mol = gto.M(
         atom=atom_str,
         basis=basis_name,
-        cart=False,
+        cart=True,
         symmetry=False
     )
     

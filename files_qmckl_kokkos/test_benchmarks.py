@@ -73,7 +73,7 @@ def run_scf_and_export_trexio(atoms: list, h5_filepath: str, basis_name: str):
     mol = gto.M(
         atom=atom_pyscf,
         basis=basis_name,
-        cart=False,       # Spherical harmonics (standard in QMCkL)
+        cart=True,       # False for Spherical harmonics (standard in QMCkL)
         symmetry=False,
         verbose=0
     )
